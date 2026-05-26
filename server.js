@@ -1,7 +1,7 @@
 const http = require("http");
 const https = require("https");
 
-const API_KEY = process.env.ANTHROPIC_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -14,27 +14,31 @@ const server = http.createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => { body += chunk; });
     req.on("end", () => {
-      console.log("Received request:", body.substring(0, 100));
-      
       let parsed;
-      try { parsed = JSON.parse(body); } 
+      try { parsed = JSON.parse(body); }
       catch(e) { res.writeHead(400); res.end(JSON.stringify({ error: "Invalid JSON" })); return; }
 
+      // Convert messages to Gemini format
+      const contents = parsed.messages.map(m => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }]
+      }))
+
       const payload = JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        system: "You are an expert AI Career Mentor with 15+ years of experience. Give specific, actionable career advice. Be warm, practical and direct. Keep responses to 2-4 paragraphs.",
-        messages: parsed.messages,
+        system_instruction: {
+          parts: [{ text: "You are an expert AI Career Mentor with 15+ years of experience in career coaching, HR, and talent development. Give specific, actionable career advice. Be warm, practical and direct. Keep responses to 2-4 paragraphs." }]
+        },
+        contents: contents
       });
 
+      const path = `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
       const options = {
-        hostname: "api.anthropic.com",
-        path: "/v1/messages",
+        hostname: "generativelanguage.googleapis.com",
+        path: path,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": API_KEY,
-          "anthropic-version": "2023-06-01",
           "Content-Length": Buffer.byteLength(payload),
         },
       };
@@ -43,17 +47,21 @@ const server = http.createServer((req, res) => {
         let data = "";
         apiRes.on("data", (chunk) => { data += chunk; });
         apiRes.on("end", () => {
-          console.log("Anthropic response status:", apiRes.statusCode);
-          console.log("Anthropic response:", data.substring(0, 200));
-          res.writeHead(apiRes.statusCode, { "Content-Type": "application/json" });
-          res.end(data);
+          try {
+            const parsed = JSON.parse(data);
+            const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || "I couldn't generate a response.";
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ text }));
+          } catch(e) {
+            res.writeHead(500);
+            res.end(JSON.stringify({ error: "Parse error" }));
+          }
         });
       });
 
-      apiReq.on("error", (e) => { 
-        console.error("API request error:", e.message);
-        res.writeHead(500); 
-        res.end(JSON.stringify({ error: e.message })); 
+      apiReq.on("error", (e) => {
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: e.message }));
       });
       apiReq.write(payload);
       apiReq.end();
