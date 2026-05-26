@@ -1,7 +1,7 @@
 const http = require("http");
 const https = require("https");
 
-const API_KEY = "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";
+const API_KEY = process.env.ANTHROPIC_API_KEY;
 
 const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
