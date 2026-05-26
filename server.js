@@ -14,7 +14,12 @@ const server = http.createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => { body += chunk; });
     req.on("end", () => {
-      const parsed = JSON.parse(body);
+      console.log("Received request:", body.substring(0, 100));
+      
+      let parsed;
+      try { parsed = JSON.parse(body); } 
+      catch(e) { res.writeHead(400); res.end(JSON.stringify({ error: "Invalid JSON" })); return; }
+
       const payload = JSON.stringify({
         model: "claude-sonnet-4-20250514",
         max_tokens: 1000,
@@ -38,12 +43,18 @@ const server = http.createServer((req, res) => {
         let data = "";
         apiRes.on("data", (chunk) => { data += chunk; });
         apiRes.on("end", () => {
-          res.writeHead(200, { "Content-Type": "application/json" });
+          console.log("Anthropic response status:", apiRes.statusCode);
+          console.log("Anthropic response:", data.substring(0, 200));
+          res.writeHead(apiRes.statusCode, { "Content-Type": "application/json" });
           res.end(data);
         });
       });
 
-      apiReq.on("error", (e) => { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); });
+      apiReq.on("error", (e) => { 
+        console.error("API request error:", e.message);
+        res.writeHead(500); 
+        res.end(JSON.stringify({ error: e.message })); 
+      });
       apiReq.write(payload);
       apiReq.end();
     });
